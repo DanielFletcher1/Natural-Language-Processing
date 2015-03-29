@@ -7,7 +7,7 @@ output: html_document
 #Exploratory analysis introduction
 The purpose of this paper is to give some very brief findings from my introductory exploration of the SwiftKey data set and solicit feedback on my plans to build a SwiftKey-like text prediction model.
 
-As this paper is written to be understood by a "non data scientist," all of the code I executed is hidden from view and may be seen here: [TBD SOON](ADSOFIJ)
+As this paper is written to be understood by a "non data scientist," all of the code I executed is hidden from view and may be seen here: [On GitHub](https://github.com/DanielFletcher1/Natural-Language-Processing/blob/master/msReport.Rmd)
 
 
 ```{r Loading Data and Preprocessing,echo=FALSE,message=FALSE,warning=FALSE,cache=TRUE}
