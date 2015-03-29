@@ -1,0 +1,205 @@
+---
+title: "Data Science Capstone Milestone Report"
+author: "Daniel Fletcher"
+date: "Saturday, March 28, 2015"
+output: html_document
+---
+#Exploratory analysis introduction
+The purpose of this paper is to give some very brief findings from my introductory exploration of the SwiftKey data set and solicit feedback on my plans to build a SwiftKey-like text prediction model.
+
+As this paper is written to be understood by a "non data scientist," all of the code I executed is hidden from view and may be seen here: [TBD SOON](ADSOFIJ)
+
+
+```{r Loading Data and Preprocessing,echo=FALSE,message=FALSE,warning=FALSE,cache=TRUE}
+
+#LOAD REQUIRED PACKAGES
+
+require("tm")
+require("NLP")
+require("SnowballC")
+require("stringi")
+require("proxy")
+
+#DOWNLOAD/UNZIP THE DATA
+
+if(!file.exists("dataset.zip"))
+       download.file(url = "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip", "dataset.zip") 
+
+if(!file.exists("final")) unzip(zipfile = "dataset.zip")
+
+#SAMPLE THE FILES FOR FASTER PROCESSING
+
+if(!file.exists("corpSource")) dir.create("corpSource") #Create directory source if missing
+
+if(!file.exists("corpSource/bSmpl.txt")) #Check for blog sample and create if missing
+  {
+  bfile <- "final/en_US/en_US.blogs.txt"
+  
+  bLnCt <- countLines(bfile) #Get blog line count
+  
+  set.seed(1); bSmplr <- rbinom(n = bLnCt, size = 1, prob = .05) #Create blog sample index
+  
+  dput(readLines(bfile)[which(bSmplr==1)],"corpSource/bSmpl.txt") #Create sample blog file (~05% lines)
+  }
+
+if(!file.exists("corpSource/nSmpl.txt")) #Check for news sample and create if missing
+  {
+  nfile <- "final/en_US/en_US.news.txt"
+  
+  nLnCt <- countLines(nfile) #Get news line count
+  
+  set.seed(2); nSmplr <- rbinom(n = nLnCt,size = 1,prob = .05) #Create news sample index
+  
+  dput(readLines(nfile)[which(nSmplr==1)],"corpSource/nSmpl.txt") #Create sample news file (~05% lines)
+  }
+
+if(!file.exists("corpSource/tSmpl.txt")) #Check for twitter sample and create if missing
+  {
+  tfile <- "final/en_US/en_US.twitter.txt"
+  
+  tLnCt <- countLines(tfile) #Get twitter line count
+  
+  set.seed(3); tSmplr <- rbinom(n = tLnCt,size = 1,prob = .05) #Create twitter sample index
+  
+  dput(readLines(tfile)[which(tSmplr==1)],"corpSource/tSmpl.txt") #Create sample twitter file (~05% lines)
+  }
+
+#PREPROCESS THE FILES TO CONVERT TO LOWERCASE, REMOVE PUNCTUATION, & WHITE SPACE
+
+#CREDIT:  chenmiao on GitHub (accessed March 27,2015)
+#https://github.com/chenmiao/Big_Data_Analytics_Web_Text/wiki/Text-Preprocessing-with-R
+
+corp <- Corpus(DirSource("corpSource"), 
+                readerControl=list(reader=readPlain,language="en")) #Add files to a corpus
+
+corp <- tm_map(corp, content_transformer(tolower)) #Convert to lowercase
+
+corp <- tm_map(corp, removePunctuation)
+
+corp <- tm_map(corp, stripWhitespace) #Remove extra whitespace
+
+```
+
+
+```{r Tokenize,echo=FALSE,message=FALSE,warning=FALSE,cache=TRUE}
+
+#CODE COURTESY OF COURSE TA MACIEJ SZYMKIEWICZ
+#https://github.com/zero323/r-snippets/blob/master/R/ngram_tokenizer.R
+
+ngram_tokenizer <- function(n = 1L, skip_word_none = TRUE, skip_word_number = FALSE) {
+  stopifnot(is.numeric(n), is.finite(n), n > 0)
+  
+  #' To avoid :: calls
+  stri_split_boundaries <- stringi::stri_split_boundaries
+  stri_join <- stringi::stri_join
+  
+  options <- stringi::stri_opts_brkiter(
+    type="word", skip_word_none = skip_word_none, skip_word_number = skip_word_number
+  )
+  
+  #' Tokenizer
+  #' 
+  #' @param x character
+  #' @return character vector with n-grams
+  function(x) {
+    stopifnot(is.character(x))
+    
+    # Split into word tokens
+    tokens <- unlist(stri_split_boundaries(x, opts_brkiter=options))
+    len <- length(tokens)
+    
+    if(all(is.na(tokens)) || len < n) {
+      # If we didn't detect any words or number of tokens is less than n return empty vector
+      character(0)
+    } else {
+      sapply(
+        1:max(1, len - n + 1),
+        function(i) stri_join(tokens[i:min(len, i + n - 1)], collapse = " ")
+      )
+    }
+  }
+}
+
+tokenizer1 <- ngram_tokenizer(1) #Create unigram tokenizer
+tokenizer2 <- ngram_tokenizer(2) #Create bigram tokenizer
+tokenizer3 <- ngram_tokenizer(3) #Create trigram tokenizer
+tokenizer4 <- ngram_tokenizer(4) #Create quadrigram tokenizer
+```
+
+```{r TermDocumentMatrix,echo=FALSE,message=FALSE,warning=FALSE,cache=TRUE}
+
+tdm <- TermDocumentMatrix(corp, control = list(tokenize = function(x) tokenizer1(as.character(x))))
+
+```
+
+```{r Exploratory Analysis,echo=FALSE,message=FALSE,warning=FALSE,cache=TRUE}
+#CREDIT:  StackOverflow
+#http://stackoverflow.com/questions/15506118/make-dataframe-of-top-n-frequent-terms-for-multiple-corpora-using-tm-package-in
+#http://stackoverflow.com/questions/12077413/order-a-matrix-by-multiple-column-in-r
+
+m <- as.matrix(tdm) #Turn tdm into a matrix for easier exploratory analysis
+
+v <- sort(rowSums(m), decreasing=TRUE) #Individual word frequency
+
+bo <- m[order(m[,1],m[,2],m[,3],decreasing=TRUE),][1:10,] #Top 10 words, ordered by blogs first
+
+bwords <- sum(m[,1]) #Total blog words
+
+newswords <- sum(m[,2]) #Total news words
+
+twords <- sum(m[,3]) #Total twitter words
+
+```
+
+#Analyzing the data and detecting words
+In order to considerably reduce computing time (I understand many classmates have taken hours for some processing on *high-end* machines), I've taken relatively small, simple random samples (~5%) of the three English files provided for this project: `en_US.blogs.txt`, `en_US.news.txt`, and `en_US.twitter.txt`.
+
+Part of my analysis was to analyze how many words were in each file.  "Words" are a difficult for machines to naturally delineate because they think in 1s and 0s.  However, there are various text mining resources, such as `tm`, an add-on for the R programming tool, which help to simplify the complex question of defining and quantifying "words."
+
+Using some data-cleaning tools from `tm` and other add-ons, I "pre-processed" the data, to ensure my computer would categorize words from the three text files close to the way a human would.
+
+#Word counts
+In my sampled version of the files, I counted approximately 1,454,413 blog words, 108,880 news words, and 1,142,112 twitter words.  I imagine the low count for news words could be due to its higher formality and lower likelihood of having terms that would not normally be considered "words," such as "00003175."
+
+When looking at the most frequent words in the sampled files (ordered below by highest blog count), there are obviously a high number of low-context words, such as "the" and "and."  I made a conscious decision, for now, to include these common words (often called "stop words"), in case they help with my prediciton models later.  I may choose to remove them.
+
+
+```{r Display Stop Words,echo=FALSE,message=FALSE,warning=FALSE,cache=TRUE}
+bo
+```
+
+Of interest is that although many of the first hunderd most frequent words across all three files are classified by the `tm` add-on as "stopwords," about 59% of them are not, as shown in the pie chart below.
+
+```{r Display Stop Word Pie Chart,echo=FALSE,message=FALSE,warning=FALSE,cache=TRUE}
+
+stoplength <- length(stopwords()) #174
+
+instop <- sum(names(v)[1:stoplength] %in% stopwords()) #72
+
+pie(x = c(instop,stoplength),labels = c("41% Match 'Stopwords'", "59% Don't Match 'Stopwords'"),main = "Percent of Sample words that match 'Stopwords'")
+
+```
+
+#Line counts
+Although processing all lines in the three text files for word delination can be very time-consuming and resource intensive, determining how many lines each file has is very simple and takes only 1-20 seconds, depending on the user's machine.
+
+There are about 899,288 lines in the blogs file, 1,010,242 in the news file, and 2,360,148 in the twitter file, all as shown below.
+
+```{r Display Line Count,echo=FALSE,message=FALSE,warning=FALSE,cache=TRUE}
+
+b <- countLines(file = "final/en_US/en_US.blogs.txt")
+n <- countLines(file = "final/en_US/en_US.news.txt")
+t <- countLines(file = "final/en_US/en_US.twitter.txt")
+
+```
+
+```{r Display Bar Plot,echo=FALSE,message=FALSE,warning=FALSE,cache=TRUE}
+barplot(c(b,n,t),names.arg = c("Blogs","News","Twitter"))
+```
+
+#Moving on to prediction
+The most interesting and challenging aspect of this project will be solidfying my prediction model.  At the moment, my progress is shaky, and I would greatly appreciate any feedback and resources you feel inclined to share.
+
+I still plan to use a random sample of the data for computational efficiency and later compression in my Shiny app.  However, I might increase the size of the sample to ensure better accuracy.
+
+Thank you for your time!
